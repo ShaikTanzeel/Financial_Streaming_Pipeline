@@ -1,0 +1,17 @@
+# Python dependencies for Gold Price Analytics Pipeline
+
+# Kafka
+confluent-kafka==2.3.0
+
+# Data Ingestion
+yfinance==1.2.0
+
+# PostgreSQL (Phase 5)
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
+
+# Utilities
+python-dotenv==1.0.0
+
+# Development
+pytest==7.4.4

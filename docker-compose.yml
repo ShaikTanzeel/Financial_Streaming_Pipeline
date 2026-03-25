@@ -1,0 +1,111 @@
+services:
+  # start of our team of services
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+        - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    container_name: kafdrop
+    depends_on:
+      - kafka
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: kafka:29092
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/storage/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  flink-jobmanager:
+    image: flink:1.18.0-scala_2.12
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    volumes:
+      - flink_lib:/opt/flink/lib
+      - ./src/processing:/opt/flink/sql
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./external_libs/flink-sql-connector-kafka-3.0.2-1.18.jar:/opt/flink/lib/flink-sql-connector-kafka-3.0.2-1.18.jar
+      - ./external_libs/flink-connector-jdbc-3.1.2-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.1.2-1.18.jar
+      - ./external_libs/postgresql-42.7.3.jar:/opt/flink/lib/postgresql-42.7.3.jar
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        execution.checkpointing.interval: 600000
+        execution.checkpointing.mode: EXACTLY_ONCE
+        execution.checkpointing.min-pause: 600000
+        state.backend.type: hashmap
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+
+  flink-taskmanager:
+    image: flink:1.18.0-scala_2.12
+    container_name: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    volumes:
+      - flink_lib:/opt/flink/lib
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./external_libs/flink-sql-connector-kafka-3.0.2-1.18.jar:/opt/flink/lib/flink-sql-connector-kafka-3.0.2-1.18.jar
+      - ./external_libs/flink-connector-jdbc-3.1.2-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.1.2-1.18.jar
+      - ./external_libs/postgresql-42.7.3.jar:/opt/flink/lib/postgresql-42.7.3.jar
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        execution.checkpointing.interval: 600000
+        execution.checkpointing.mode: EXACTLY_ONCE
+        execution.checkpointing.min-pause: 600000
+        state.backend.type: hashmap
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+
+# Named volumes — Docker stores these on your PC's disk.
+# Data survives 'docker compose down' and container restarts.
+# To delete: 'docker compose down -v' (the -v flag removes volumes)
+volumes:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_logs:
+  flink_lib:            # Flink JARs (including Kafka connector) survive restarts
+  flink_checkpoints:    # Flink checkpoint data survives restarts
+  postgres_data:        # PostgreSQL data survives restarts
